@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spam or genuine? An SMS spam detector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&family=Instrument+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EDF1F7; --paper:#FFFFFF; --ink:#1B2433; --muted:#566275; --line:#CDD5E2;
+  --blue:#3A5BD9; --amber:#F2B544;
+  --spam:#C8363B; --spam-soft:#FBE4E4; --ham:#17825A; --ham-soft:#DDF3E9;
+  --head:"Bricolage Grotesque","Trebuchet MS",Arial,sans-serif;
+  --body:"Instrument Sans","Segoe UI",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 1.0625rem/1.65 var(--body)}
+a{color:var(--blue);text-underline-offset:3px}
+a:focus-visible,button:focus-visible,textarea:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+.wrap{max-width:54rem;margin:0 auto;padding:0 1.25rem}
+h1,h2,h3{font-family:var(--head);line-height:1.1;margin:0}
+
+nav{padding:1rem 0;border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;align-items:baseline}
+nav strong{font:800 1.1rem var(--head);margin-right:auto}
+nav a{color:var(--ink);text-decoration:none;font-size:.97rem}
+nav a:hover{color:var(--blue)}
+
+.hero{padding:3.5rem 0 2.5rem}
+h1{font-weight:800;font-size:clamp(2.5rem,8vw,4.8rem);letter-spacing:-.035em}
+.lead{max-width:36rem;color:var(--muted);margin:1rem 0 2rem;font-size:1.15rem}
+
+.checker{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:1.4rem;box-shadow:0 12px 30px -18px rgba(27,36,51,.35)}
+label{display:block;font:800 1rem var(--head);margin-bottom:.5rem}
+textarea{width:100%;min-height:7.5rem;resize:vertical;padding:.9rem 1rem;border:2px solid var(--line);border-radius:12px;font:inherit;color:var(--ink);background:#F8FAFD}
+textarea:focus{border-color:var(--blue);outline:none}
+.row{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:.9rem}
+button{font:800 1rem var(--head);cursor:pointer;border-radius:999px;border:2px solid var(--ink);padding:.55rem 1.3rem}
+.go{background:var(--ink);color:#fff}
+.go:hover{background:var(--blue);border-color:var(--blue)}
+.chip{background:var(--paper);color:var(--ink);font:600 .88rem var(--body);padding:.3rem .8rem;border-color:var(--line)}
+.chip:hover{border-color:var(--ink)}
+.try{margin:1rem 0 0;color:var(--muted);font-size:.92rem}
+
+#result{margin-top:1.25rem;display:none;border-radius:12px;padding:1.1rem 1.2rem}
+#result.spam{background:var(--spam-soft);border:1px solid var(--spam)}
+#result.ham{background:var(--ham-soft);border:1px solid var(--ham)}
+#result.none{background:#F1F3F7;border:1px solid var(--line)}
+#verdict{font:800 1.6rem var(--head)}
+.spam #verdict{color:var(--spam)} .ham #verdict{color:var(--ham)}
+.meter{height:10px;border-radius:6px;background:var(--ham);overflow:hidden;margin:.7rem 0}
+.meter i{display:block;height:100%;background:var(--spam)}
+#shown{margin:.6rem 0 0;word-break:break-word}
+.hs{background:#F4B8BB;border-radius:3px;padding:0 2px}
+.hh{background:#BFE5D1;border-radius:3px;padding:0 2px}
+.key{font-size:.9rem;color:var(--muted);margin:.7rem 0 0}
+
+section{padding:2.75rem 0;border-top:1px solid var(--line)}
+h2{font-weight:800;font-size:1.8rem;letter-spacing:-.02em;margin-bottom:1rem}
+.steps{list-style:none;padding:0;margin:1.2rem 0 0;display:grid;gap:1rem;counter-reset:n}
+.steps li{counter-increment:n;padding-left:3rem;position:relative}
+.steps li::before{content:counter(n);position:absolute;left:0;top:0;width:2.1rem;height:2.1rem;border-radius:50%;background:var(--ink);color:#fff;font:800 1rem/2.1rem var(--head);text-align:center}
+.steps strong{font-family:var(--head);font-size:1.1rem}
+.note{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:1rem 1.2rem;margin-top:1.2rem;font-size:.97rem}
+ul.flags{padding-left:1.2rem;margin:0}
+ul.flags li{margin:.5rem 0}
+.todo{background:#E3E9FB;border-radius:4px;padding:0 .3rem}
+footer{padding:2rem 0 3rem;color:var(--muted);font-size:.95rem;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <strong>Spam or genuine?</strong>
+  <a href="#how">How it works</a><a href="#spot">Spot spam</a><a href="#about">About</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <h1>Is this message spam?</h1>
+  <p class="lead">Paste a text message and a small machine-learning model will tell you whether it looks like spam, and which words gave it away.</p>
+
+  <div class="checker">
+    <label for="msg">Message to check</label>
+    <textarea id="msg" placeholder="Paste or type an SMS message here"></textarea>
+    <div class="row"><button class="go" id="check" type="button">Check message</button></div>
+    <p class="try">Or try an example:</p>
+    <div class="row" style="margin-top:.4rem">
+      <button class="chip" type="button" data-t="Congratulations! You won a free gift. Click the link to claim now">Prize message</button>
+      <button class="chip" type="button" data-t="URGENT! Your account is blocked. Verify now at http://bank-login.example">Bank warning</button>
+      <button class="chip" type="button" data-t="Can you send me the lecture notes before the class tomorrow">Friend asking for notes</button>
+      <button class="chip" type="button" data-t="Reached the hostel, see you at the canteen at one">Casual message</button>
+    </div>
+    <div id="result" aria-live="polite">
+      <div id="verdict"></div>
+      <div class="meter" id="meterBox"><i id="meter"></i></div>
+      <div id="detail"></div>
+      <p id="shown"></p>
+      <p class="key" id="key"></p>
+    </div>
+  </div>
+</div></header>
+
+<main class="wrap">
+
+<section id="how">
+  <h2>How it works</h2>
+  <ol class="steps">
+    <li><strong>Collect labelled messages.</strong><br>The project uses the SMS Spam Collection, about 5,500 real messages already marked as spam or genuine (ham).</li>
+    <li><strong>Turn text into numbers.</strong><br>Each message is split into words. In the full project, TF-IDF gives more weight to words that are distinctive, such as &ldquo;claim&rdquo;, and less to everyday words, such as &ldquo;the&rdquo;.</li>
+    <li><strong>Learn which words signal spam.</strong><br>A Naive Bayes classifier counts how often each word appears in spam and in genuine messages.</li>
+    <li><strong>Score a new message.</strong><br>Every word in a new message pushes the verdict toward spam or toward genuine. The total decides the label.</li>
+  </ol>
+  <p class="note">The checker above is a lightweight version that runs entirely in your browser. It trains on about 50 short example messages using word counts, so it can be fooled. The full model, trained on the complete dataset with Python and scikit-learn, is far more accurate.</p>
+</section>
+
+<section id="spot">
+  <h2>Spot spam yourself</h2>
+  <ul class="flags">
+    <li><strong>Urgency.</strong> &ldquo;Act now&rdquo; and &ldquo;last chance&rdquo; are meant to stop you from thinking.</li>
+    <li><strong>Prizes you never entered for.</strong> A win you did not enter for is almost always a trap.</li>
+    <li><strong>Unknown links.</strong> Do not tap links from numbers you do not know.</li>
+    <li><strong>Requests for an OTP, a password or card details.</strong> Real banks never ask for these by message.</li>
+    <li><strong>Pressure to pay a small fee.</strong> Fake delivery and refund messages often start this way.</li>
+  </ul>
+</section>
+
+<section id="about">
+  <h2>About the project</h2>
+  <p>This site is part of Mini Project 1, AI-Based Application Development. The goal was to classify text messages as spam or genuine using machine learning.</p>
+  <ul class="flags">
+    <li><strong>Data:</strong> SMS Spam Collection, about 5,500 messages, roughly 13% spam</li>
+    <li><strong>Tools:</strong> Python, pandas, scikit-learn, TF-IDF, Multinomial Naive Bayes</li>
+    <li><strong>Test accuracy:</strong> <span class="todo">[your accuracy]%</span></li>
+    <li><strong>Notebook:</strong> <a href="#"><span class="todo">[link to your Colab notebook or repository]</span></a></li>
+  </ul>
+</section>
+
+</main>
+
+<footer><div class="wrap">Built by Nawneet Kumar Choubey, B.Tech (Hons.) Semester I, Unitedworld Institute of Technology, Karnavati University.</div></footer>
+
+<script>
+(function () {
+  "use strict";
+
+  var SPAM = [
+    "Congratulations! You have won a free prize. Click the link to claim your reward now",
+    "URGENT! Your bank account is blocked. Verify your details at http://secure-bank-login.example now",
+    "Win cash! Text WIN to 80085 to enter the draw. Reply STOP to opt out",
+    "Free entry in our weekly contest. Claim your free gift voucher today",
+    "You have been selected for a special offer. Call now to claim 5000 cash",
+    "Limited time offer! Get 50% off today only. Click here to buy now",
+    "Your parcel is on hold. Pay the small fee at this link to receive delivery",
+    "Dear customer your KYC has expired. Update now or your account will be suspended",
+    "Claim your free ringtone now. Reply YES to subscribe, charges apply",
+    "You are a lucky winner of a brand new phone. Click to claim your prize",
+    "Earn money from home. Guaranteed income, no experience needed. Apply now",
+    "Final notice: your loan is approved. Send your OTP and bank details to receive cash",
+    "Get a free recharge voucher. Click the link and win up to 1000 cash",
+    "Hot singles waiting for you. Text now for free chat",
+    "Your number won 10000 in the lottery. Call this number to claim your prize",
+    "Last chance! Buy one get one free. Offer ends tonight, click now",
+    "Your account has unusual activity. Click this link to confirm your password urgently",
+    "Exclusive deal just for you. Free trial, cancel anytime, order now",
+    "Congratulations, you have been chosen for a free holiday. Call now to claim",
+    "Make money fast with this simple trick. Join now and get paid daily",
+    "Free credit offer! Reply with your card number to receive bonus cash",
+    "URGENT: electricity will be cut tonight. Call this number immediately to pay the bill",
+    "You have a pending refund. Click the link to claim your money today",
+    "Win a free gift card. Text CLAIM now, winners selected daily"
+  ];
+  var HAM = [
+    "Are we meeting at five for the project work",
+    "Can you send me the notes from today class",
+    "I will reach home by eight, save some dinner for me",
+    "Thanks for your help with the assignment yesterday",
+    "Call me when you are free, I wanted to ask about tomorrow",
+    "Happy birthday! Hope you have a great day with your family",
+    "The lab session has moved to room 204 on Friday",
+    "Did you finish the practical file or do you need help",
+    "I am running late, the bus is stuck in traffic",
+    "Let us have lunch together after the lecture",
+    "Mom said to buy some vegetables on the way back",
+    "Please bring your laptop to the workshop tomorrow",
+    "Good morning, how was your weekend",
+    "Can we study together tonight for the exam",
+    "I forgot my charger, can I borrow yours",
+    "The match starts at seven, are you coming",
+    "Reminder: team meeting at ten in the morning",
+    "Sorry I missed your call, I was in the library",
+    "Just reached the hostel, talk to you later",
+    "Do you have the video link for the recorded lecture",
+    "See you at the canteen in ten minutes",
+    "Thank you for the lovely gift, I really liked it",
+    "Where are you? We are waiting near the gate",
+    "I will send the report tonight, please check it tomorrow"
+  ];
+
+  function $(id) { return document.getElementById(id); }
+
+  function tokens(text) {
+    var t = text.toLowerCase();
+    var out = [];
+    if (/https?:\/\/|www\./.test(t)) out.push("urltoken");
+    if (t.indexOf("!") !== -1) out.push("exclaim");
+    var found = t.match(/[a-z]+|\d+/g) || [];
+    found.forEach(function (w) {
+      if (/^\d+$/.test(w)) {
+        if (w.length >= 4) out.push("bignum");
+      } else {
+        out.push(w);
+      }
+    });
+    return out;
+  }
+
+  var sc = Object.create(null), hc = Object.create(null);
+  var sTot = 0, hTot = 0;
+  SPAM.forEach(function (m) { tokens(m).forEach(function (w) { sc[w] = (sc[w] || 0) + 1; sTot++; }); });
+  HAM.forEach(function (m) { tokens(m).forEach(function (w) { hc[w] = (hc[w] || 0) + 1; hTot++; }); });
+
+  var vocab = Object.create(null);
+  Object.keys(sc).concat(Object.keys(hc)).forEach(function (w) { vocab[w] = true; });
+  var V = Object.keys(vocab).length;
+
+  function llr(w) {
+    return Math.log(((sc[w] || 0) + 1) / (sTot + V)) - Math.log(((hc[w] || 0) + 1) / (hTot + V));
+  }
+
+  function note(title, detail) {
+    var box = $("result");
+    box.style.display = "block";
+    box.className = "none";
+    $("verdict").textContent = title;
+    $("meterBox").style.display = "none";
+    $("detail").textContent = detail || "";
+    $("shown").textContent = "";
+    $("key").textContent = "";
+  }
+
+  function show(text) {
+    var known = tokens(text).filter(function (w) { return vocab[w]; });
+    if (!known.length) {
+      note("Not enough to go on", "None of these words appear in the demo model\u2019s examples. Try a longer message.");
+      return;
+    }
+    var score = 0;
+    known.forEach(function (w) { score += llr(w); });
+    var p = 1 / (1 + Math.exp(-score));
+    var pct = Math.min(99, Math.max(1, Math.round(p * 100)));
+    var isSpam = p >= 0.5;
+
+    var box = $("result");
+    box.style.display = "block";
+    box.className = isSpam ? "spam" : "ham";
+    $("verdict").textContent = isSpam ? "Likely spam" : "Looks genuine";
+    $("meterBox").style.display = "block";
+    $("meter").style.width = pct + "%";
+    $("detail").textContent = "Spam score: " + pct + "%";
+
+    var shown = $("shown");
+    shown.textContent = "";
+    text.split(/(\s+)/).forEach(function (chunk) {
+      var key = /https?:\/\/|www\./i.test(chunk) ? "urltoken" : chunk.toLowerCase().replace(/[^a-z]/g, "");
+      var s = vocab[key] ? llr(key) : 0;
+      if (s > 0.7 || s < -0.7) {
+        var span = document.createElement("span");
+        span.className = s > 0 ? "hs" : "hh";
+        span.textContent = chunk;
+        shown.appendChild(span);
+      } else {
+        shown.appendChild(document.createTextNode(chunk));
+      }
+    });
+    $("key").textContent = "Red words pushed the score toward spam; green words pushed it toward genuine.";
+  }
+
+  function run(text) {
+    try {
+      if (!text.trim()) {
+        note("Nothing to check yet", "Type or paste a message first, or pick one of the examples.");
+        return;
+      }
+      show(text);
+    } catch (err) {
+      note("Something went wrong", String(err && err.message ? err.message : err));
+    }
+  }
+
+  var input = $("msg");
+  $("check").addEventListener("click", function () { run(input.value); });
+  var chips = document.querySelectorAll(".chip");
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].addEventListener("click", function () {
+      input.value = this.getAttribute("data-t");
+      run(input.value);
+    });
+  }
+})();
+</script>
+</body>
+</html>
